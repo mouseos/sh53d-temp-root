@@ -5,6 +5,12 @@ switches SELinux to permissive on the Japanese SHARP AQUOS wish3 SH-53D.
 Nothing is installed to a boot or system partition. Root access, the daemon,
 and permissive mode disappear after a normal reboot.
 
+**Status: experimental and panic-prone.** The exact public artifacts have
+completed successfully on the physical device, but another run of the same
+artifacts panicked during the second race stage. This is not a reliability-
+qualified release. A run can spend several minutes on expected race misses
+and still reboot the device without obtaining root.
+
 ## Supported build
 
 The runner refuses any fingerprint other than the one tested:
@@ -19,10 +25,12 @@ The runner refuses any fingerprint other than the one tested:
 | Kernel | Linux 4.19.191+, arm64 |
 | SoC | MediaTek MT6833 |
 
-It was verified on the physical device on 2026-09-12. Kernel addresses and
-race parameters are specific to this build. Running it on another build can
-panic the kernel or corrupt memory. Use it only on a device you own and can
-recover.
+It was tested on the physical device on 2026-09-12. Successful runs reached
+an interactive root shell, but a later run of the identical v0.1.1 binaries
+panicked after stage 1 had succeeded and stage 2 had accepted the forged
+waiter, before the splice bootstrap completed. Kernel addresses and race
+parameters are specific to this build. Running it on another build can panic
+the kernel or corrupt memory. Use it only on a device you own and can recover.
 
 ## Build
 
@@ -46,7 +54,9 @@ Enable USB debugging, connect exactly one SH-53D, and run:
 The script checks the exact build fingerprint, performs a clean reboot,
 uploads files only under `/data/local/tmp`, resolves the per-boot KASLR slide,
 and runs up to 12 race attempts. A race miss is handled by the attempt
-supervisor; a kernel panic requires another run after the device reboots.
+supervisor. Messages such as `failed status=1`, `failed status=255`, or a
+rejected allocator candidate are expected misses. They do not predict whether
+a later attempt will succeed. The unsafe stage-2 race can panic the kernel.
 
 After success:
 
