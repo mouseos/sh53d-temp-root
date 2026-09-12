@@ -473,6 +473,7 @@ void app_publish_two_stage1(uintptr_t installed_fops,
                             uint64_t original_flags_mode,
                             uint64_t bootstrap_flags_mode);
 void app_publish_two_stage2_ready(void);
+int app_trigger_two_stage_splice(void);
 int app_wait_two_stage_splice(ssize_t *splice_ret);
 int app_get_two_stage_state(uintptr_t *installed_fops,
                             uintptr_t *target_fop,

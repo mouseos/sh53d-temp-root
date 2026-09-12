@@ -347,7 +347,8 @@
 #define KERNELSNITCH_FUTEX_HASH_SIZE               2048
 #define KERNELSNITCH_MEASURE_CORE                  7
 #define SH53D_SCAN_BUDGET                          131072
+#define SH53D_PILE_SETTLE_MS                       1000 /* SH53D RUNTIME: every waiter is observed ready before this scheduler-settle margin */
 #define SH53D_SKIP_DOUBLING_FILTER                 1
-#define ROUTE_WAIT_SECONDS                         25 /* SH53D-ONLY: sweet spot over 8s (owner slow) and 120s (consumer miss) */
+#define ROUTE_WAIT_SECONDS                         25 /* SH53D-ONLY: 15s produced 0/7 oracle hits; retain the shortest device-validated timeout */
 
 #endif /* SH53D_TARGET_H */
