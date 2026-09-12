@@ -55,11 +55,8 @@ adb shell -t /data/local/tmp/sh53d-root
 adb shell /data/local/tmp/sh53d-root -c 'id; getenforce'
 ```
 
-Reboot when finished:
-
-```sh
-adb reboot
-```
+The first command opens an interactive root shell with a `# ` prompt. Use
+`exit` to leave that shell.
 
 ## Exploit chain
 

@@ -115,6 +115,7 @@ static void set_root_env(void) {
   setenv("HOME", "/data/local/tmp", 1);
   setenv("USER", "root", 1);
   setenv("LOGNAME", "root", 1);
+  setenv("PS1", "# ", 1);
   if (__system_property_get("ro.product.device", hostname) > 0) {
     setenv("HOSTNAME", hostname, 1);
   }
