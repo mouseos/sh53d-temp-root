@@ -1,0 +1,8 @@
+/build/
+/dist/
+*.log
+*.tmp
+*.bin
+.DS_Store
+.idea/
+.vscode/

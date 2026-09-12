@@ -1,0 +1,14 @@
+SH-53D temporary root
+
+This project contains adaptations of work from:
+
+* ghostlock-cve-2026-43499 by gitchw
+  https://github.com/gitchw/ghostlock-cve-2026-43499
+* samsung-m53-root-4x by N1et
+  https://github.com/N1et/samsung-m53-root-4x
+* ghostlock-cve-2026-43499-4.19-k40 by yijiacloud
+  https://github.com/yijiacloud/ghostlock-cve-2026-43499-4.19-k40
+* ghostlock-k419-adapter by XiaoBaiLovesStirring
+  https://github.com/XiaoBaiLovesStirring/ghostlock-k419-adapter
+
+The repository is distributed under Apache License 2.0. See LICENSE.
