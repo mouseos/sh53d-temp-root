@@ -1,37 +1,60 @@
-API ?= 31
-HOST_TAG ?= linux-x86_64
-TARGET := sh53d-prewake-linearmap-auto-root-nomut
-TARGET_HEADER := src/targets/$(TARGET)/target.h
-TARGET_INCLUDE := targets/$(TARGET)/target.h
-CC := $(ANDROID_NDK_HOME)/toolchains/llvm/prebuilt/$(HOST_TAG)/bin/aarch64-linux-android$(API)-clang
-DIST := dist
-COMMON_SRCS := src/main.c src/util.c src/fops.c src/pipe.c src/root_m53.c src/preload.c
-COMMON_FLAGS := -O2 -g0 -Wall -Wextra -Wno-unused-parameter -Wno-sign-compare -Isrc -DTARGET_HEADER='"$(TARGET_INCLUDE)"'
+# pmg110-root — top-level wrapper around source/Makefile
+#
+# Same shape as warhol-root: a per-device directory under targets/ holds the
+# compile-time headers, and they are staged into source/src/ for the build, so
+# a build can never silently pick up headers generated for another device.
+#
+# Unlike warhol-root, the exploit core here is the ghostlock 6.6 tree rather
+# than popsicle: PMG110 runs GKI 6.6/android15, and popsicle's layout is pinned
+# to 6.12/android16. Everything around that core is warhol-root's, including the
+# su route — su_daemon.c built as a PIE and embedded with .incbin, so root ends
+# in a persistent su rather than in a bare "the writes landed".
 
-ifeq ($(wildcard $(CC)),)
-$(error Set ANDROID_NDK_HOME to an Android NDK containing $(CC))
-endif
+DEVICE ?= sh53d-38JP_3_330
 
-.PHONY: all clean checksums
-all: $(DIST)/sh53d-slide.so $(DIST)/sh53d-exploit.so $(DIST)/sh53d-root $(DIST)/sh53d-launcher.so checksums
+TARGET_SRC  := targets/$(DEVICE)/target.h
+OFFSETS_SRC := targets/$(DEVICE)/device_offsets.h
+TARGET_DST  := source/src/target.h
+OFFSETS_DST := source/src/device_offsets.h
+PRELOAD     := source/build/bin/preload.so
 
-$(DIST):
-	mkdir -p $@
+.PHONY: all preload target clean info devices FORCE
 
-$(DIST)/sh53d-slide.so: $(COMMON_SRCS) src/slide.c $(TARGET_HEADER) src/targets/sh53d-prewake-linearmap-auto-root/target.h src/targets/sh53d-prewake-linearmap-auto-sweep/target.h src/common.h src/offset.h src/kernelsnitch/*.h | $(DIST)
-	$(CC) -fPIC $(COMMON_FLAGS) $(COMMON_SRCS) src/slide.c -shared -pthread -o $@
+all: preload
 
-$(DIST)/sh53d-exploit.so: $(COMMON_SRCS) src/slide_app.c $(TARGET_HEADER) src/targets/sh53d-prewake-linearmap-auto-root/target.h src/targets/sh53d-prewake-linearmap-auto-sweep/target.h src/common.h src/offset.h src/kernelsnitch/*.h | $(DIST)
-	$(CC) -DAPP_PAYLOAD=1 -fPIC $(COMMON_FLAGS) $(COMMON_SRCS) src/slide_app.c -shared -pthread -o $@
+# re-checked every build, so switching DEVICE cannot leave the previous
+# device's headers staged
+target: $(TARGET_DST) $(OFFSETS_DST)
 
-$(DIST)/sh53d-root: src/su_daemon.c $(TARGET_HEADER) src/targets/sh53d-prewake-linearmap-auto-root/target.h src/targets/sh53d-prewake-linearmap-auto-sweep/target.h | $(DIST)
-	$(CC) -fPIE -pie -O2 -g0 -Wall -Wextra -Isrc -DTARGET_HEADER='"$(TARGET_INCLUDE)"' $< -ldl -o $@
+$(TARGET_DST): $(TARGET_SRC) FORCE
+	@cmp -s $< $@ 2>/dev/null || cp $< $@
 
-$(DIST)/sh53d-launcher.so: tools/launch_old_filetarget.c | $(DIST)
-	$(CC) -fPIC -shared -O2 -Wall -Wextra $< -o $@
+$(OFFSETS_DST): $(OFFSETS_SRC) FORCE
+	@cmp -s $< $@ 2>/dev/null || cp $< $@
 
-checksums: $(DIST)/sh53d-slide.so $(DIST)/sh53d-exploit.so $(DIST)/sh53d-root $(DIST)/sh53d-launcher.so
-	cd $(DIST) && sha256sum sh53d-slide.so sh53d-exploit.so sh53d-root sh53d-launcher.so > SHA256SUMS
+FORCE:
+
+$(TARGET_SRC) $(OFFSETS_SRC):
+	@echo "missing $@" >&2
+	@echo "generate it first — see tools/extract_device.py" >&2
+	@false
+
+preload: target
+	$(MAKE) -C source preload
+	@mkdir -p out
+	cp $(PRELOAD) out/preload-$(DEVICE).so
+	@echo "-> out/preload-$(DEVICE).so"
+
+devices:
+	@ls targets
+
+info:
+	@echo "DEVICE      = $(DEVICE)"
+	@echo "TARGET_SRC  = $(TARGET_SRC)"
+	@echo "OFFSETS_SRC = $(OFFSETS_SRC)"
+	@echo "OUT         = out/preload-$(DEVICE).so"
+	@$(MAKE) -C source info
 
 clean:
-	rm -rf $(DIST)
+	$(MAKE) -C source clean
+	rm -f $(TARGET_DST) $(OFFSETS_DST)

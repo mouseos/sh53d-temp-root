@@ -1,43 +1,58 @@
-# SH-53D physical-device validation
+# SH-53D 38JP_3_330 physical-device validation
 
-Validation date: 2026-09-12  
-Device build: `38JP_1_30I`  
-Fingerprint: `DOCOMO/SH-53D/SH-53D:13/TP1A.220624.014/38JP_1_30I:user/release-keys`
+Validation date: 2026-09-14
+Fingerprint: `DOCOMO/SH-53D/SH-53D:15/AP3A.240905.015.A2/38JP_3_330:user/release-keys`
 
-The host prepared a fresh boot before each trial. The measured command was:
+The first successful fresh boot used boot ID
+`7b71eebc-2d7f-48c0-a67d-18bf29aa1022`. It began in `uid=2000(shell)` and
+SELinux `Enforcing`, and used the default target values with no timing or
+address override.
 
-```sh
-/usr/bin/time -p ./run.sh
-```
+- Kernel offsets matched the exact uname.
+- KernelSnitch reported `futex_hashsize 2048 (8 possible CPUs)`.
+- W1 accepted on attempt 1 and the kernel reported `SELinux DISABLED`.
+- perf found the child task at `0xffffff80440ccb00`.
+- W2 accepted on round 4; the child reported `uid=0`.
+- Total exploit time was 88,628 ms.
+- The embedded daemon was installed and answered from a separate ordinary ADB
+  shell.
 
-`run.sh` itself does not reboot the device. Success requires its final daemon
-marker, an uid-0 command shell, and SELinux permissive mode.
-
-| Trial | Boot ID | Stage 1 accepted | Root accepted | Wall time |
-|---|---|---:|---:|---:|
-| 1 | `11e8a6ed-8c6d-4a81-8079-cebaf8aed0fe` | attempt 1 | attempt 3 | 155.96 s |
-| 2 | `b3a1fac2-f289-40a8-87dc-493e28b755da` | attempt 1 | attempt 7 | 322.11 s |
-
-Both trials ended with:
+Independent command verification:
 
 ```text
-root permissive daemon enforcing=0 ready=1
-uid=0(root) gid=0(root) ... context=u:r:shell:s0
+uid=0(root) gid=0(root) groups=0(root) context=u:r:kernel:s0
 Permissive
 ```
 
-Artifact SHA-256 values:
+Interactive PTY verification:
 
 ```text
-6273e35af10a6c044c2f364334100ae15131b80444eedd2ba8f214b6fd300b78  sh53d-slide.so
-c851e9c05b649d552b4eea12be47d18ccc6f694936b7ba4692e3ac58d53d38ac  sh53d-exploit.so
-2a22c13c3414d74569b61650cf5370bcb2f6cdf126203cf70036b45681430f04  sh53d-root
-91da4afcf606558b9e608e44e3dcb4f7b49310aec715ccde3cd2f2c2585fa1fa  sh53d-launcher.so
+SH-53D:/ # id; getenforce; pwd
+uid=0(root) gid=0(root) groups=0(root) context=u:r:kernel:s0
+Permissive
+/
+SH-53D:/ #
 ```
 
-The timing reductions keep the exploit acceptance checks intact. They reduce
-the boot-quiet floor from 120 to 60 seconds, wait one second after all
-KernelSnitch waiter threads report ready, use 8/1 timing samples, and remove
-the fixed five-second pause between safe misses. A 15-second futex route was
-rejected after 0 oracle hits in 7 attempts; the device-validated 25-second
-route remains in use.
+Artifact:
+
+```text
+a3a41a6c29b53eec429cb20acfda3e56c50f6e921af3a9e40c86fb4dd87feb01  preload-sh53d-38JP_3_330.so
+```
+
+The same artifact was exercised again on boot ID
+`4cac80d4-1fcd-47c7-b3a1-9ee2e41c65a0`. One complete invocation safely
+missed all five W1 attempts; the next invocation accepted W1 on attempt 4 and
+W2 on round 1, reaching root and permissive in 62,994 ms. This is the artifact
+shipped by the branch.
+
+Two trials of an intermediate artifact (SHA-256
+`3113925c56ad3a2ccc477b68dcc2b58fc08eeb72a7f166487902537ff528d574`)
+rebooted at the first W1 pselect call. That artifact is not shipped. The
+one-source-line difference was only the physical-load alignment diagnostic,
+so causality is unproven; the result is retained as evidence that race panic
+remains possible.
+
+The runner makes up to three complete invocations so a safe full-run miss does
+not require manual re-execution. If the kernel reboots, it waits for Android,
+reinstalls the same artifact, and continues without issuing a reboot command.

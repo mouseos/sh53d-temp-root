@@ -199,21 +199,48 @@ uint32_t __futex_hash(futex_key_t *key, uint32_t futex_hashsize)
     return hash & (futex_hashsize-1);
 }
 
+#ifndef FUTEX_HASHSIZE
+#error "FUTEX_HASHSIZE is not defined; it belongs in the device target.h"
+#endif
+
 unsigned long futex_hashsize = (unsigned long)-1;
+
+/* The kernel computes this once at boot:
+ *
+ *     futex_hashsize = roundup_pow_of_two(256 * num_possible_cpus());
+ *
+ * and futex_hash() indexes with `hash & (futex_hashsize - 1)`. Two things this
+ * used to get wrong, both of which silently corrupt the bruteforce (the
+ * collision search is pure timing and does not notice):
+ *
+ *   * _SC_NPROCESSORS_ONLN is the *online* count, but the kernel used
+ *     num_possible_cpus(). A core parked at the wrong moment changed the
+ *     answer.
+ *   * no roundup_pow_of_two. Any non-power-of-two makes the mask meaningless.
+ *
+ * So take it from the target header, and cross-check against what the kernel
+ * would have computed. _SC_NPROCESSORS_CONF reads
+ * /sys/devices/system/cpu/possible, i.e. num_possible_cpus() itself.
+ */
 void futex_init(void)
 {
-#if defined(APP_REQUIRE_FRESH_P0_SESSION) && APP_REQUIRE_FRESH_P0_SESSION
-#ifdef KERNELSNITCH_FUTEX_HASH_SIZE
-    futex_hashsize = KERNELSNITCH_FUTEX_HASH_SIZE;
-#else
-    unsigned long requested = SYSCHK(sysconf(_SC_NPROCESSORS_ONLN)) * 256;
-    futex_hashsize = 1;
-    while (futex_hashsize < requested)
-        futex_hashsize <<= 1;
-#endif
-#else
-    futex_hashsize = SYSCHK(sysconf(_SC_NPROCESSORS_ONLN) * 256);
-#endif
+    futex_hashsize = FUTEX_HASHSIZE;
+
+    long possible = sysconf(_SC_NPROCESSORS_CONF);
+    if (possible > 0) {
+        unsigned long want = 256UL * (unsigned long)possible;
+        unsigned long rounded = 1;
+        while (rounded < want)
+            rounded <<= 1;
+        if (rounded != futex_hashsize)
+            pr_warning("futex_hashsize %lu from target.h, but %ld possible CPUs "
+                       "imply %lu -- the mm_struct search will not converge if "
+                       "target.h is wrong\n",
+                       futex_hashsize, possible, rounded);
+        else
+            pr_info("futex_hashsize %lu (%ld possible CPUs)\n",
+                    futex_hashsize, possible);
+    }
 }
 uint32_t futex_hash(size_t addr, size_t mm)
 {

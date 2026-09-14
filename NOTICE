@@ -10,5 +10,7 @@ This project contains adaptations of work from:
   https://github.com/yijiacloud/ghostlock-cve-2026-43499-4.19-k40
 * ghostlock-k419-adapter by XiaoBaiLovesStirring
   https://github.com/XiaoBaiLovesStirring/ghostlock-k419-adapter
+* CVE-2026-43499-pmg110-root by soralis0912
+  https://github.com/soralis0912/CVE-2026-43499-pmg110-root
 
 The repository is distributed under Apache License 2.0. See LICENSE.
