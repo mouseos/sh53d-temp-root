@@ -41,7 +41,8 @@ else
   for outer_attempt in 1 2 3; do
     adb shell rm -f "$REMOTE_LOG" 2>/dev/null || true
     echo "[3/4] Running GhostLock (run $outer_attempt/3)."
-    if adb shell env "GHOSTLOCK_LOG=$REMOTE_LOG" +         "LD_PRELOAD=$REMOTE_SO" /system/bin/true; then
+    if adb shell env "GHOSTLOCK_LOG=$REMOTE_LOG" \
+         "LD_PRELOAD=$REMOTE_SO" /system/bin/true; then
       :
     fi
 
